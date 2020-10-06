@@ -402,7 +402,7 @@ bool SQLGenerator::ImportSOH(const IMSData& imsData)
     for(int i = 0; i < imsData.sohData.CrystalTemperature.size(); i++) //all lists should contain the same ammount of data
     {
         query.str("");
-        query << "INSERT INTO SOH(DetectorID, FileID, RoomTemperature, ShieldStatus, Humidity, HighVoltage, CrystalTemperature, Timestamp, DateTime, MeasurementTime) VALUES (" 
+        query << "INSERT INTO SOH(DetectorID, FileID, RoomTemperature, ShieldStatus, Humidity, HighVoltage, CrystalTemperature, DateTime, MeasurementTime, Valid) VALUES (" 
             << detectorID << ", " 
             << fileID << ", "
             << imsData.sohData.RoomTemperature[i] << ", "
@@ -410,9 +410,9 @@ bool SQLGenerator::ImportSOH(const IMSData& imsData)
             << imsData.sohData.Humidity[i] << ", "
             << imsData.sohData.HighVoltage[i] << ", "
             << imsData.sohData.CrystalTemperature[i] << ", "
-            << "FROM_UNIXTIME(" << imsData.sohData.Timestamp[i]/1000 << "), " //timestamp is in ms, but FROM_UNIXTIME takes s
             << "STR_TO_DATE(\'" << imsData.sohData.DateTime[i] << "\',\'%Y/%m/%d %H:%i:%s\'), "
-            << imsData.sohData.MeasurementTime[i]
+            << imsData.sohData.MeasurementTime[i] << ", "
+            << (imsData.sohData.Valid ? "TRUE" : "FALSE")
             << ");";
         log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, query.str().c_str());
         if(RunQuery(nRow, query.str().c_str()))
@@ -455,13 +455,14 @@ bool SQLGenerator::ImportQC(const IMSData& imsData)
     uint64_t nRow = 0;
 
     query.str("");
-    query << "INSERT INTO QC(DetectorID, FileID, AcquisitionStartTime, Realtime, AcquisitionLength, CalibrationDate) VALUES (" 
+    query << "INSERT INTO QC(DetectorID, FileID, AcquisitionStartTime, Realtime, AcquisitionLength, CalibrationDate, Valid) VALUES (" 
     << detectorID << ", "
     << fileID << ", "
     << "STR_TO_DATE(\'" << imsData.qcData.AcquisitionStartTime << "\',\'%Y/%m/%d %H:%i:%s\'), "
     << imsData.qcData.Realtime << ", "
     << imsData.qcData.AcquisitionLength << ", "
-    << "STR_TO_DATE(\'" << imsData.qcData.CalibrationDate << "\',\'%Y/%m/%d %H:%i:%s\')"
+    << "STR_TO_DATE(\'" << imsData.qcData.CalibrationDate << "\',\'%Y/%m/%d %H:%i:%s\'), "
+    << (imsData.qcData.Valid ? "TRUE" : "FALSE")
     << ");";
     log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, query.str().c_str());
     if(RunQuery(nRow, query.str().c_str()))
@@ -560,6 +561,65 @@ bool SQLGenerator::ImportQC(const IMSData& imsData)
             return false;
         }
     }
+
+    if(imsData.qcData.Certificate.AbsoluteActivity != 0)
+    {
+        query.str("");
+        query << "INSERT INTO QCCertificate(QCID, AbsoluteActivity, DateTime) VALUES (" 
+            << QCID << ", " 
+            << imsData.qcData.Certificate.AbsoluteActivity << ", "
+            << "STR_TO_DATE(\'" << imsData.qcData.Certificate.DateTime << "\',\'%Y/%m/%d %H:%i:%s\')"
+            << ");";
+        log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, query.str().c_str());
+        if(RunQuery(nRow, query.str().c_str()))
+        {
+            if(nRow != 1) 
+            {
+                log_msg.str("");
+                log_msg << "Insert QCCertificate failed";
+                log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
+                return false;
+            }
+            CertificateID = GetLastInsertID();
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    for(int i = 0; i < imsData.qcData.Certificate.intensity.EnergyPercentage.size(); i++) //all lists should contain the same ammount of data
+    {
+        if(!CheckIsotope(imsData.qcData.Certificate.intensity.IsotopeName[i], imsData.qcData.Certificate.intensity.HalfLife[i]))
+        {
+            return false;
+        }
+
+        query.str("");
+        query << "INSERT INTO Intensity(CertificateID, IsotopeID, RelativeActivity, Energy, EnergyPercentage) VALUES (" 
+            << CertificateID << ", " 
+            << IsotopeID << ", "
+            << imsData.qcData.Certificate.intensity.RelativeActivity[i] << ", "
+            << imsData.qcData.Certificate.intensity.Energy[i] << ", "
+            << imsData.qcData.Certificate.intensity.EnergyPercentage[i]
+            << ");";
+        log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, query.str().c_str());
+        if(RunQuery(nRow, query.str().c_str()))
+        {
+            if(nRow != 1) 
+            {
+                log_msg.str("");
+                log_msg << "Insert Intensity failed at " << imsData.qcData.Certificate.intensity.EnergyPercentage.size() << "/" << i;
+                log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+
     log_msg.str("");
     log_msg << "QC data inserted successfully.";
     log.Append(DLog::MESSAGE_TYPE::MESSAGE_INFO, SQL_TAG, log_msg.str());
@@ -606,5 +666,69 @@ void SQLGenerator::StartTransaction()
         log_msg.str("");
         log_msg << "Start transaction command failed.";
         log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
+    }
+}
+
+bool SQLGenerator::CheckIsotope(const std::string& isotope, const double& halflife)
+{
+    unsigned int nRow = 0;
+    unsigned int nColumn = 0;
+    MYSQL_RES *res;
+    query.str("");
+    query << "SELECT ID, HalfLife FROM Isotopes WHERE Name LIKE \"" << isotope << "\";";
+    log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, query.str());
+    if(RunQuery(&res, nRow, nColumn, query.str().c_str()))
+    {
+        if(nRow == 0) //not exists, insert it and query the id
+        {
+            return InsertIsotope(isotope, halflife);
+        }
+        else
+        {
+            MYSQL_ROW row;
+            row = mysql_fetch_row(res);
+            IsotopeID = std::stoi(row[0]);
+            double hl = std::stod(row[1]);
+            log_msg.str("");
+            log_msg << "Isotope already imported" << ((hl == halflife) ? "" : ", but the half life doesn't match");
+            log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str().c_str());
+            return true;
+        }
+        
+    }
+    else
+    {
+        return false;
+    }
+}
+
+bool SQLGenerator::InsertIsotope(const std::string& name, const double& halflife)
+{
+    uint64_t nRow = 0;
+    query.str("");
+    query << "INSERT INTO Isotopes(Name, HalfLife) VALUES (" 
+        << "\"" << name << "\", " 
+        << halflife
+        << ");";
+    log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, query.str().c_str());
+    if(RunQuery(nRow, query.str().c_str()))
+    {
+        if(nRow != 1) 
+        {
+            log_msg.str("");
+            log_msg << "Insert Isotope failed";
+            log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
+            return false;
+        }
+        else
+        {
+            IsotopeID = GetLastInsertID();
+            return true;
+        }
+        
+    }
+    else
+    {
+        return false;
     }
 }

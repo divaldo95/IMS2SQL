@@ -23,6 +23,7 @@ void print_usage()
     std::cout << "-f and -d can be combined and can be used multiple times to specify more than one file or directory." << std::endl;
     std::cout << "Use -R to enable recursive directory scan. Must specified before adding any directory." << std::endl;
     std::cout << "Use -n database_name to specify the database name. By default it will use Decay." << std::endl;
+    std::cout << "Use -v number to set the Valid flag explicitly. (0 = false, any other = true)" << std::endl;
     std::cout << "Use -N to specify the user's name" << std::endl;
 }
 
@@ -34,7 +35,7 @@ int main(int argc, char** argv)
     SQLGenerator sqlGen;
     IMSHandler ims;
     int c, index;
-    while((c = getopt(argc, argv, "f:d:n:hRN")) != -1)
+    while((c = getopt(argc, argv, "f:d:n:v:hRN")) != -1)
     {
         switch (c)
         {
@@ -49,6 +50,9 @@ int main(int argc, char** argv)
             break;
         case 'h':
             print_usage();
+            break;
+        case 'v':
+            ims.SetValidFlag(((std::stoi(optarg) == 0) ? false : true));
             break;
         case 'R':
             fHandler.EnableRecursive();

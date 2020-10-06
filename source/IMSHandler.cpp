@@ -13,6 +13,7 @@ IMSHandler::IMSHandler()
 
 IMSHandler::~IMSHandler()
 {
+    imsData.Clear();
     if(failedFiles.size() != 0)
     {
         std::cout << "There were an error while processing some files. Check log file." << std::endl;
@@ -44,7 +45,7 @@ bool IMSHandler::Open(std::filesystem::path path)
     inFile.open(path, std::ifstream::in);
     if(inFile.is_open())
     {
-        imsData = {}; //reset struct
+        imsData.Clear(); //reset struct
         imsData.relativepath = path.parent_path();
         imsData.absolutepath = std::filesystem::absolute(path); 
         imsData.filename = path.filename();
@@ -235,50 +236,15 @@ void IMSHandler::ReadRMSSOH()
             if (sep.size()<11) continue;
             if (stod(sep[3]) < 100) continue; //no high voltage -> skip
             
-            
-            int yearmonth = sep[8].find('/');
-            int monthday = sep[8].rfind('/');
-            int year = stoi(sep[8].substr(0,yearmonth));
-            int month = stoi(sep[8].substr(yearmonth+1,monthday-yearmonth-1));
-            int day = stoi(sep[8].substr(monthday+1));
-            
-            int hourminute = sep[9].find(':');
-            int minutesec = sep[9].rfind(':');
-            int hour = stoi(sep[9].substr(0,hourminute));
-            int minute = stoi(sep[9].substr(hourminute+1,minutesec-hourminute-1));
-            int sec = stoi(sep[9].substr(minutesec+1));
-            
-            
-            time_t rawtime;
-            time(&rawtime);
-            struct tm* timeinfo = localtime ( &rawtime ); 
-            
-            timeinfo->tm_year   = year - 1900;
-            timeinfo->tm_mon    = month - 1;    //months since January - [0,11]
-            timeinfo->tm_mday   = day;          //day of the month - [1,31] 
-            timeinfo->tm_hour   = hour;         //hours since midnight - [0,23]
-            timeinfo->tm_min    = minute;       //minutes after the hour - [0,59]
-            timeinfo->tm_sec    = sec;          //seconds after the minute - [0,59]
-            
             imsData.sohData.RoomTemperature.push_back(std::stod(sep[0]));
             imsData.sohData.ShieldStatus.push_back(sep[1].compare("CLOSED") == 0 ? "TRUE" : "FALSE"); //CLOSED = TRUE | OPEN = FALSE
             imsData.sohData.Humidity.push_back(std::stoi(sep[2]));
             imsData.sohData.HighVoltage.push_back(std::stoi(sep[3]));
             imsData.sohData.CrystalTemperature.push_back(std::stoi(sep[4]));
-            imsData.sohData.Timestamp.push_back(timegm(timeinfo)); //converted timestamp
             date.str("");
             date << sep[8] << " " << sep[9];
             imsData.sohData.DateTime.push_back(date.str());
             imsData.sohData.MeasurementTime.push_back(std::stoi(sep[10]));
-
-            /*
-            timestamps[numofvalues] = timegm(timeinfo);
-            roomtemps[numofvalues] = stod(sep[0]);
-            humidities[numofvalues] = stod(sep[2]);
-            crystaltemps[numofvalues] = stod(sep[4]);
-            highvoltages[numofvalues] = stod(sep[3]);
-            numofvalues++;
-            */
         }
     }
     if(imsData.sohData.HighVoltage.size() < 1)
@@ -306,7 +272,10 @@ void IMSHandler::ReadQCPHD()
     bool genergy = false;
     bool acqu = false;
     bool calibration = false;
+    bool certificatestart = false;
+    bool certificate = false;
     std::stringstream date;
+    QCSpectrumZeroCount = 0;
     while (getline (inFile,line))
     {
         if (line == "#g_Spectrum")
@@ -333,6 +302,11 @@ void IMSHandler::ReadQCPHD()
             calibration = true;
         else if (line.front() == '#' || line == "STOP")
             calibration = false;
+
+        if (line == "#Certificate")
+            certificatestart = true;
+        else if (line.front() == '#' || line == "STOP")
+            certificate = false;
         
         
         if (gspectrum)
@@ -344,15 +318,10 @@ void IMSHandler::ReadQCPHD()
                 imsData.qcData.Spectrum.X.push_back(std::stoi(sep[0])+i);
                 imsData.qcData.Spectrum.Y.push_back(std::stoi(sep[i+1]));
                 imsData.qcData.Spectrum.Error.push_back(0);
-                /*
-                xvalues[numofvalues] = std::stoi(sep[0])+i;
-                errorvalues[numofvalues] = 0;
-                yvalues[numofvalues] = std::stoi(sep[i+1]);
-                numofvalues++;
-                */
+                if(std::stoi(sep[i+1]) == 0 && thresholdMethod) QCSpectrumZeroCount++;
+                else if(std::stoi(sep[i+1]) > 0) imsData.qcData.Valid = true; //if at least one is not zero
             }        
         }
-        
         
         if (gspectrumstart)
         {
@@ -360,6 +329,29 @@ void IMSHandler::ReadQCPHD()
             if (sep.size()<2) continue;
             gspectrumstart = 0;
             gspectrum = 1;
+        }
+
+        if (certificate)
+        {
+            std::vector<std::string> sep = split(line);
+            if (sep.size()<10) continue;
+            imsData.qcData.Certificate.intensity.IsotopeName.push_back(sep[0]);
+            imsData.qcData.Certificate.intensity.HalfLife.push_back(std::stod(sep[1]));
+            imsData.qcData.Certificate.intensity.RelativeActivity.push_back(std::stod(sep[3]));
+            imsData.qcData.Certificate.intensity.Energy.push_back(std::stod(sep[5]));
+            imsData.qcData.Certificate.intensity.EnergyPercentage.push_back(std::stod(sep[6]));
+        }
+        
+        if (certificatestart)
+        {
+            std::vector<std::string> sep = split(line);
+            if (sep.size()<2) continue;
+            imsData.qcData.Certificate.AbsoluteActivity = std::stoi(sep[0]);
+            date.str("");
+            date << sep[1] << " " << sep[2];
+            imsData.qcData.Certificate.DateTime = date.str();
+            certificatestart = 0;
+            certificate = 1;
         }
                 
         if (gefficiency)
@@ -369,12 +361,6 @@ void IMSHandler::ReadQCPHD()
             imsData.qcData.Efficiency.X.push_back(std::stod(sep[0]));
             imsData.qcData.Efficiency.Y.push_back(std::stod(sep[1]));
             imsData.qcData.Efficiency.Error.push_back(std::stod(sep[2]));
-            /*
-            effxvalues[numofeffvalues] = std::stod(sep[0]);
-            effyvalues[numofeffvalues] = std::stod(sep[1]);
-            erroreffvalues[numofeffvalues] = std::stod(sep[2]);
-            numofeffvalues++;      
-            */
         }
         
         if (genergy)
@@ -384,11 +370,6 @@ void IMSHandler::ReadQCPHD()
             imsData.qcData.Energy.X.push_back(std::stod(sep[0]));
             imsData.qcData.Energy.Y.push_back(std::stod(sep[1]));
             imsData.qcData.Energy.Error.push_back(std::stod(sep[2]));
-            /*
-            calxvalues[numofcalvalues] = std::stod(sep[0]);
-            calyvalues[numofcalvalues] = std::stod(sep[1]);
-            numofcalvalues++;  
-            */    
         }
         
         if (acqu)
@@ -411,6 +392,15 @@ void IMSHandler::ReadQCPHD()
             imsData.qcData.CalibrationDate = date.str();
         }
     }
+    if(explicitValidFlag) //override at the end if needed
+    {
+        imsData.qcData.Valid = explicitValidFlagState;
+    }
+    else if(thresholdMethod) //use threshold method will override the SUM method
+    {
+        if(QCSpectrumZeroCount >= QCSpectrumZeroThreshold) imsData.qcData.Valid = false;
+        else imsData.qcData.Valid = true;
+    }
     fileOK = true;
     log_msg.str("");
     log_msg << "Reading file done." << std::endl << imsData;
@@ -424,6 +414,17 @@ const IMSData& IMSHandler::GetIMSData()
         imsData = {};
     }
     return imsData;
+}
+
+void IMSHandler::SetValidFlag(bool state)
+{
+    explicitValidFlag = true;
+    explicitValidFlagState = state;
+}
+
+void IMSHandler::DisableValidFlagOverride()
+{
+    explicitValidFlag = false;
 }
 
 //------------------------------------------------------------------------------------------------

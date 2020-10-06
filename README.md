@@ -16,6 +16,7 @@ Simply running the code doesn't do anything. You need to specify at least one fi
 - `-d ims_files_dir/` Specify a directory which contains the IMS files. Every file from that directory will be opened and converted. Also can be used multiple times for adding more than one directory.
 - `-n database_name` Specify the database name. By default it will use Decay. The importable structure file also use this.
 - `-N` The database contains the user's name, who converted and uploaded the data. You can use this parameter to specify it for one time, or edit the source code and rebuild the application.
+- `-v number` Set valid flag explicitly. If the number is 0, then the flag will be false, if anything else, it will be true. 
 - `-h` Print help 
 
 ## Log files
@@ -30,8 +31,20 @@ Before compilation, edit [source/SQLGenerator.cpp](source/SQLGenerator.cpp) and 
  - `make -jN` Where N is the number of jobs to run simultaneously
 
  ## Database
- There is an [SQL script](database/decay_mysql_create.sql), which creates the database and the tables in the database folder. Just import it. The [structure](database/structure.png) also can be found in that directory: ![DB structure](database/structure.png)
+ There is an [SQL script](database/decay_mysql_create.sql), which creates the database and the tables in the database folder. Just import it.
+ The [structure](database/structure.png) can be found in that directory: ![DB structure](database/structure.png). As of the latest update, I switched to MySQL Workbench, which means that the database structure can be viewed by opening [structure.mwb](database/structure.mwb). Use MySQL Workbench for forward engineering the model into an SQL script. If you are using older versions of MySQL/MariaDB and run into a syntax error because of the VISIBLE word, just remove all of it from the SQL script and import it again.
 
 # Changelog
+## 2020-10-06
+* Modifications on memory handling
+* Added certificate readings
+* Added intensity readings
+* Added isotope readings
+* You can set explicitly valid flag on a set of files or directories
+* QC files with only zero values are set to Valid = false on upload
+* Added version control tables to the database
+* Uploaded database model in MySQL Workbench format
+* Updated the structure script and image
+
 ## 2020-07-20
 * Initial version

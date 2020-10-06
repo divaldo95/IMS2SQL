@@ -36,6 +36,8 @@ private:
     uint64_t detectorID = 0;
     uint64_t fileID = 0;
     uint64_t QCID = 0;
+    uint64_t CertificateID = 0;
+    uint64_t IsotopeID = 0;
 
     bool CheckDatabase(); //Check if it is exists
     bool SelectDatabase();
@@ -43,6 +45,8 @@ private:
     bool CheckImportedFile(const IMSData&);
     bool InsertFileData(const IMSData&);
     bool InsertDetector(const IMSData&);
+    bool CheckIsotope(const std::string&, const double&);
+    bool InsertIsotope(const std::string&, const double&);
     bool ImportSOH(const IMSData&);
     bool ImportQC(const IMSData&);
     void CommitChanges();

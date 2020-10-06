@@ -14,6 +14,41 @@ struct MSG_ID
 {
     std::string id_string;
     std::string source;
+    inline void Clear()
+    {
+        id_string = "";
+        source = "";
+    }
+};
+
+struct Intensity
+{
+    std::vector<std::string> IsotopeName;
+    std::vector<double> HalfLife;
+    std::vector<double> RelativeActivity;
+    std::vector<double> Energy;
+    std::vector<double> EnergyPercentage;
+    inline void Clear()
+    {
+        IsotopeName.clear();
+        HalfLife.clear();
+        RelativeActivity.clear();
+        Energy.clear();
+        EnergyPercentage.clear();
+    }
+};
+
+struct QCCertificate
+{
+    int AbsoluteActivity;
+    std::string DateTime;
+    Intensity intensity;
+    inline void Clear()
+    {
+        AbsoluteActivity = 0;
+        DateTime = "";
+        intensity.Clear();
+    }
 };
 
 struct gSpectrum
@@ -21,6 +56,12 @@ struct gSpectrum
     std::vector<int> X;
     std::vector<int> Y;
     std::vector<int> Error;
+    inline void Clear()
+    {
+        X.clear();
+        Y.clear();
+        Error.clear();
+    }
 };
 
 struct gEfficiency
@@ -28,6 +69,12 @@ struct gEfficiency
     std::vector<double> X;
     std::vector<double> Y;
     std::vector<double> Error;
+    inline void Clear()
+    {
+        X.clear();
+        Y.clear();
+        Error.clear();
+    }
 };
 
 struct gEnergy
@@ -35,6 +82,12 @@ struct gEnergy
     std::vector<double> X;
     std::vector<double> Y;
     std::vector<double> Error;
+    inline void Clear()
+    {
+        X.clear();
+        Y.clear();
+        Error.clear();
+    }
 };
 
 struct SOHData
@@ -44,9 +97,20 @@ struct SOHData
     std::vector<int> Humidity;
     std::vector<int> HighVoltage;
     std::vector<int> CrystalTemperature;
-    std::vector<int> Timestamp;
     std::vector<std::string> DateTime;
     std::vector<int> MeasurementTime;
+    bool Valid;
+    inline void Clear()
+    {
+        RoomTemperature.clear();
+        ShieldStatus.clear();
+        Humidity.clear();
+        HighVoltage.clear();
+        CrystalTemperature.clear();
+        DateTime.clear();
+        MeasurementTime.clear();
+        Valid = true; //couldn't validate on uploading so explicitly set to true 
+    }
 };
 
 struct QCData
@@ -58,6 +122,20 @@ struct QCData
     gSpectrum Spectrum;
     gEfficiency Efficiency;
     gEnergy Energy;
+    QCCertificate Certificate;
+    bool Valid;
+    inline void Clear()
+    {
+        AcquisitionLength = 0;
+        AcquisitionStartTime = "";
+        Realtime = 0;
+        CalibrationDate = "";
+        Spectrum.Clear();
+        Efficiency.Clear();
+        Energy.Clear();
+        Certificate.Clear();
+        Valid = false;
+    }
 };
 
 struct IMSData
@@ -70,6 +148,17 @@ struct IMSData
     std::string dataType;
     SOHData sohData;
     QCData qcData;
+    inline void Clear()
+    {
+        detectorName = "";
+        relativepath = "";
+        absolutepath = "";
+        filename = "";
+        msg_id.Clear();
+        dataType = "";
+        sohData.Clear();
+        qcData.Clear();
+    }
 };
 
 inline std::ostream& operator<<(std::ostream& os, const IMSData& imsData)

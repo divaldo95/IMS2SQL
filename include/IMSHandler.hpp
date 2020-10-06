@@ -29,6 +29,8 @@ class IMSHandler
 private:
     std::ifstream inFile;
     bool fileOK = false;
+    bool explicitValidFlag = false; //if valid flag is ste explicitly
+    bool explicitValidFlagState = false; //the value set
     std::string line;
 
     //Log
@@ -40,6 +42,11 @@ private:
 
     //Store file data
     IMSData imsData;
+
+    //Data validation
+    bool thresholdMethod = false; //Filter QC files by threshold or when SUM = 0
+    uint64_t QCSpectrumZeroCount = 0;
+    uint64_t QCSpectrumZeroThreshold = 100; //Not all values are zero, so mark as not valid if the zero count is above the threshold
 
     /*
      * Check file header
@@ -64,6 +71,8 @@ public:
     bool Open(std::filesystem::path);
     const IMSData& GetIMSData();
     void Close(); 
+    void SetValidFlag(bool); //override valid flag
+    void DisableValidFlagOverride();
 };
 
 
