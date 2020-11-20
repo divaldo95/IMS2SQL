@@ -5,43 +5,32 @@
  */
 #include "SQLGenerator.hpp"
 
-SQLGenerator::SQLGenerator()
+SQLGenerator::SQLGenerator() : SQLConnector()
 {
     
 }
 
-void SQLGenerator::Connect()
-{
-    mysqlserver = mysql_init(NULL);
-    try
-    {
-        //Replace username and password with the corresponding values
-        if(!mysql_real_connect(mysqlserver, "localhost", "username", "password", "", 0, NULL, 0))
-        {
-                throw "Can't connect to the server";
-        }
-        else
-        {
-            log_msg << "Successfully connected" << std::endl;
-            log_msg << "Host info: " << mysql_get_host_info(mysqlserver) << std::endl;
-            log_msg << "Client info: " << mysql_get_client_info();
-            log.Append(DLog::MESSAGE_TYPE::MESSAGE_INFO, SQL_TAG, log_msg.str());
-        }
-    }
-    catch(char const* err)
-    {
-            log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, err);
-    }
-}
-
-void SQLGenerator::Close()
-{
-    mysql_close(mysqlserver);
-    log.Append(DLog::MESSAGE_TYPE::MESSAGE_INFO, SQL_TAG, "MySQL Connection closed");
-}
-
 SQLGenerator::~SQLGenerator()
 {
+    if(failedFiles.size() != 0)
+    {
+        std::cout << "There were an error while uploading some files. Check log file." << std::endl;
+        log_msg.str("");
+        log_msg << "Failed file list (" << failedFiles.size() << "):";
+        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
+        for(int i = 0; i < failedFiles.size(); i++)
+        {
+            log_msg.str("");
+            log_msg << failedFiles[i];
+            log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
+        }
+    }
+    else
+    {
+        log_msg.str("");
+        log_msg << "All files uploaded.";
+        log.Append(DLog::MESSAGE_TYPE::MESSAGE_INFO, SQL_TAG, log_msg.str());
+    }
 }
 
 std::string SQLGenerator::GetCurrentFormattedDate()
@@ -57,14 +46,6 @@ std::string SQLGenerator::GetCurrentFormattedDate()
     return std::string(buffer);
 }
 
-void SQLGenerator::SetDatabaseName(std::string dbname)
-{
-    database = dbname;
-    log_msg.str("");
-    log_msg << "Using " << dbname << " as database name";
-    log.Append(DLog::MESSAGE_TYPE::MESSAGE_INFO, SQL_TAG, log_msg.str());
-}
-
 void SQLGenerator::SetConverterName(std::string firstname, std::string lastname)
 {
     std::stringstream name;
@@ -72,169 +53,70 @@ void SQLGenerator::SetConverterName(std::string firstname, std::string lastname)
     converterName = name.str();
 }
 
-void SQLGenerator::UploadIMSData(const IMSData& imsData)
+bool SQLGenerator::UploadIMSData(const IMSData& imsData)
 {
+    if(!imsData.fileOK)
+    {
+        log_msg.str("");
+        log_msg << "Error in file " << imsData.filename;
+        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
+        return false;
+    }
     SetAutocommit(false);
     StartTransaction();
     if(!CheckDatabase())
     {
+        log_msg.str("");
+        log_msg << "Could not upload " << imsData.filename << ". Error while checking database";
+        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
         RollbackChanges();
-        return;
+        failedFiles.push_back(imsData.filename);
+        return false;
     }
     if(!CheckDetector(imsData))
     {
+        log_msg.str("");
+        log_msg << "Could not upload " << imsData.filename << ". Error while checking detector in database";
+        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
         RollbackChanges();
-        return;
+        failedFiles.push_back(imsData.filename);
+        return false;
     }
     if(!CheckImportedFile(imsData))
     {
+        log_msg.str("");
+        log_msg << "Could not upload " << imsData.filename << ". Error while checking imported file";
+        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
         RollbackChanges();
-        return;
+        failedFiles.push_back(imsData.filename);
+        return false;
     }
     if(imsData.dataType.compare("QCPHD") == 0) 
     {
         if(!ImportQC(imsData))
         {
+            log_msg.str("");
+            log_msg << "Could not upload " << imsData.filename << ". Error while import QC data";
+            log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
             RollbackChanges();
-            return;
+            failedFiles.push_back(imsData.filename);
+            return false;
         }
     }
     else if(imsData.dataType.compare("RMSSOH") == 0) 
     {
         if(!ImportSOH(imsData))
         {
+            log_msg.str("");
+            log_msg << "Could not upload " << imsData.filename << ". Error while import SOH data";
+            log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
             RollbackChanges();
-            return;
+            failedFiles.push_back(imsData.filename);
+            return false;
         }
     }
     CommitChanges();
-}
-
-bool SQLGenerator::RunQuery(MYSQL_RES** res, unsigned int& nRow, unsigned int& nColumn, const char * query)
-{
-    if(*res != NULL)
-    {
-        //mysql_free_result(*res); //clear it
-    }
-    if(mysqlserver == NULL || mysql_ping(mysqlserver) != 0)
-    {
-        log_msg.str("");
-        log_msg << "Could not ping mysql server.";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return false;
-    }
-    if(!mysql_query(mysqlserver, query)) //start query
-    {
-        *res = mysql_store_result(mysqlserver); //store result
-        nColumn = mysql_num_fields(*res); //store column number
-        nRow = mysql_num_rows(*res); //store number of rows
-        return true;
-    }
-    else
-    {
-        log_msg.str("");
-        log_msg << "Could not run query. Server said: " << mysql_error(mysqlserver) << " (Code: " << mysql_errno(mysqlserver) << ")";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return false;
-    }
-}
-
-bool SQLGenerator::RunQuery(uint64_t& nRow, const char * query)
-{
-    if(mysqlserver == NULL || mysql_ping(mysqlserver) != 0)
-    {
-        log_msg.str("");
-        log_msg << "Could not ping mysql server.";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return false;
-    }
-    if(!mysql_query(mysqlserver, query)) //start query
-    {
-        nRow = mysql_affected_rows(mysqlserver);
-        return true;
-    }
-    else
-    {
-        log_msg.str("");
-        log_msg << "Could not run query. Server said: " << mysql_error(mysqlserver) << " (Code: " << mysql_errno(mysqlserver) << ")";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return false;
-    }
-}
-
-bool SQLGenerator::RunQuery(const char * query)
-{
-    if(mysqlserver == NULL || mysql_ping(mysqlserver) != 0)
-    {
-        log_msg.str("");
-        log_msg << "Could not ping mysql server.";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return false;
-    }
-    if(!mysql_query(mysqlserver, query)) //start query
-    {
-        return true;
-    }
-    else
-    {
-        log_msg.str("");
-        log_msg << "Could not run query. Server said: " << mysql_error(mysqlserver) << " (Code: " << mysql_errno(mysqlserver) << ")";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return false;
-    }
-}
-
-uint64_t SQLGenerator::GetLastInsertID()
-{
-    return mysql_insert_id(mysqlserver);
-}
-
-void SQLGenerator::SetAutocommit(bool state)
-{
-    if(mysqlserver == NULL || mysql_ping(mysqlserver) != 0)
-    {
-        log_msg.str("");
-        log_msg << "Could not ping mysql server.";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return;
-    }
-    mysql_autocommit(mysqlserver, state);
-}
-
-bool SQLGenerator::CheckDatabase()
-{
-    detectorID = 0;
-    fileID = 0;
-    QCID = 0;
-    MYSQL_RES* res = mysql_list_dbs(mysqlserver, database.c_str());
-    unsigned int nColumn = mysql_num_fields(res); // store column number
-    unsigned int nRow = mysql_num_rows(res); // store number of rows
-    if(nColumn == 1 && nRow == 1)
-    {
-        return SelectDatabase();
-    }
-    else
-    {
-        log_msg.str("");
-        log_msg << "Database (" << database << ") not exists.";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return false;
-    }
-}
-
-bool SQLGenerator::SelectDatabase()
-{
-    query.str("");
-    query << "USE " << database << ";";
-    log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, query.str().c_str());
-    if(RunQuery(query.str().c_str()))
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
+    return true;
 }
 
 bool SQLGenerator::CheckDetector(const IMSData& imsData)
@@ -301,7 +183,7 @@ bool SQLGenerator::CheckImportedFile(const IMSData& imsData)
         else
         {
             log_msg.str("");
-            log_msg << "File already imported";
+            log_msg << "File (" << imsData.filename << ") already imported";
             log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str().c_str());
             return false;
         }
@@ -316,6 +198,9 @@ bool SQLGenerator::CheckImportedFile(const IMSData& imsData)
 bool SQLGenerator::InsertFileData(const IMSData& imsData)
 {
     uint64_t nRow = 0;
+    log_msg.str("");
+    log_msg << "Processing file " << imsData.filename << "...";
+    log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str().c_str());
     query.str("");
     query << "INSERT INTO ImportedFiles(DetectorID, FilePath, FileName, ConvertDate, ConvertedBy, DataType) VALUES (" 
         << detectorID << ", " 
@@ -590,7 +475,7 @@ bool SQLGenerator::ImportQC(const IMSData& imsData)
 
     for(int i = 0; i < imsData.qcData.Certificate.intensity.EnergyPercentage.size(); i++) //all lists should contain the same ammount of data
     {
-        if(!CheckIsotope(imsData.qcData.Certificate.intensity.IsotopeName[i], imsData.qcData.Certificate.intensity.HalfLife[i]))
+        if(!CheckIsotope(imsData.qcData.Certificate.intensity.IsotopeName[i], imsData.qcData.Certificate.intensity.HalfLife[i], imsData.filename))
         {
             return false;
         }
@@ -626,50 +511,7 @@ bool SQLGenerator::ImportQC(const IMSData& imsData)
     return true;
 }
 
-void SQLGenerator::CommitChanges()
-{
-    if(mysqlserver == NULL || mysql_ping(mysqlserver) != 0)
-    {
-        log_msg.str("");
-        log_msg << "(Commit) Could not ping mysql server.";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return;
-    }
-    mysql_commit(mysqlserver);
-    log_msg.str("");
-    log_msg << "Changes committed.";
-    log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-}
-
-void SQLGenerator::RollbackChanges()
-{
-    if(mysqlserver == NULL || mysql_ping(mysqlserver) != 0)
-    {
-        log_msg.str("");
-        log_msg << "(Rollback) Could not ping mysql server.";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-        return;
-    }
-    mysql_rollback(mysqlserver);
-    log_msg.str("");
-    log_msg << "Changes rolled back.";
-    log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-}
-
-void SQLGenerator::StartTransaction()
-{
-    query.str("");
-    query << "START TRANSACTION;";
-    log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, query.str().c_str());
-    if(!RunQuery(query.str().c_str()))
-    {
-        log_msg.str("");
-        log_msg << "Start transaction command failed.";
-        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str());
-    }
-}
-
-bool SQLGenerator::CheckIsotope(const std::string& isotope, const double& halflife)
+bool SQLGenerator::CheckIsotope(const std::string& isotope, const double& halflife, const std::string& filename)
 {
     unsigned int nRow = 0;
     unsigned int nColumn = 0;
@@ -677,27 +519,41 @@ bool SQLGenerator::CheckIsotope(const std::string& isotope, const double& halfli
     query.str("");
     query << "SELECT ID, HalfLife FROM Isotopes WHERE Name LIKE \"" << isotope << "\";";
     log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, query.str());
-    if(RunQuery(&res, nRow, nColumn, query.str().c_str()))
+    try
     {
-        if(nRow == 0) //not exists, insert it and query the id
+        if(RunQuery(&res, nRow, nColumn, query.str().c_str()))
         {
-            return InsertIsotope(isotope, halflife);
+            if(nRow == 0) //not exists, insert it and query the id
+            {
+                return InsertIsotope(isotope, halflife);
+            }
+            else
+            {
+                MYSQL_ROW row;
+                row = mysql_fetch_row(res);
+                IsotopeID = std::stoi(row[0]);
+                double hl = std::stod(row[1]);
+                log_msg.str("");
+                log_msg << "Isotope already imported"; 
+                if(hl != halflife)
+                {
+                    log_msg << ", but the half life doesn't match. Database returned with " << std::to_string(hl) << " for " << isotope << ", but the file contains " << std::to_string(halflife) << ". (" << filename << ")";
+                }
+                log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str().c_str());
+                return true;
+            }
+            
         }
         else
         {
-            MYSQL_ROW row;
-            row = mysql_fetch_row(res);
-            IsotopeID = std::stoi(row[0]);
-            double hl = std::stod(row[1]);
-            log_msg.str("");
-            log_msg << "Isotope already imported" << ((hl == halflife) ? "" : ", but the half life doesn't match");
-            log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str().c_str());
-            return true;
+            return false;
         }
-        
     }
-    else
+    catch(const std::invalid_argument& e)
     {
+        log_msg.str("");
+        log_msg << "Exception occured on CheckIsotope: " << e.what();
+        log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, log_msg.str().c_str());
         return false;
     }
 }
@@ -731,4 +587,24 @@ bool SQLGenerator::InsertIsotope(const std::string& name, const double& halflife
     {
         return false;
     }
+}
+
+void SQLGenerator::LOGError(const char* msg)
+{
+    log.Append(DLog::MESSAGE_TYPE::MESSAGE_ERROR, SQL_TAG, msg);
+}
+
+void SQLGenerator::LOGWarning(const char* msg)
+{
+    log.Append(DLog::MESSAGE_TYPE::MESSAGE_WARNING, SQL_TAG, msg);
+}
+
+void SQLGenerator::LOGInfo(const char* msg)
+{
+    log.Append(DLog::MESSAGE_TYPE::MESSAGE_INFO, SQL_TAG, msg);
+}
+
+void SQLGenerator::LOGDeveloper(const char* msg)
+{
+    log.Append(DLog::MESSAGE_TYPE::MESSAGE_DEVELOPER, SQL_TAG, msg);
 }

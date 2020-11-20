@@ -144,6 +144,7 @@ struct IMSData
     std::string relativepath;
     std::string absolutepath;
     std::string filename;
+    bool fileOK;
     MSG_ID msg_id;
     std::string dataType;
     SOHData sohData;
@@ -154,6 +155,7 @@ struct IMSData
         relativepath = "";
         absolutepath = "";
         filename = "";
+        fileOK = false;
         msg_id.Clear();
         dataType = "";
         sohData.Clear();

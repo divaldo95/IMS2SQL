@@ -16,21 +16,22 @@
 #include <mysql/mysql.h>
 #include "filesystem.hpp"
 #include "IMSData.hpp"
+#include "SQLConnector.hpp"
 
 #define SQL_TAG "SQL"
 
-class SQLGenerator
+class SQLGenerator : public SQLConnector
 {
 private:
     /* data */
     std::ofstream outFile;
 
-    std::string database = "Decay";
-
     std::string converterName = "default";
 
+    //Failed files
+    std::vector<std::string> failedFiles;
+
     //mysql server
-    MYSQL *mysqlserver;
     std::stringstream query;
 
     uint64_t detectorID = 0;
@@ -39,20 +40,19 @@ private:
     uint64_t CertificateID = 0;
     uint64_t IsotopeID = 0;
 
-    bool CheckDatabase(); //Check if it is exists
-    bool SelectDatabase();
+    void LOGError(const char*) override;
+    void LOGWarning(const char*) override;
+    void LOGInfo(const char*) override;
+    void LOGDeveloper(const char*) override;
+
     bool CheckDetector(const IMSData&);
     bool CheckImportedFile(const IMSData&);
     bool InsertFileData(const IMSData&);
     bool InsertDetector(const IMSData&);
-    bool CheckIsotope(const std::string&, const double&);
+    bool CheckIsotope(const std::string&, const double&, const std::string&);
     bool InsertIsotope(const std::string&, const double&);
     bool ImportSOH(const IMSData&);
     bool ImportQC(const IMSData&);
-    void CommitChanges();
-    void RollbackChanges();
-    void StartTransaction();
-    uint64_t GetLastInsertID();
 
     std::string GetCurrentFormattedDate();
 
@@ -63,18 +63,7 @@ public:
     SQLGenerator();
     ~SQLGenerator();
 
-    void Connect();
-    bool RunQuery(MYSQL_RES**, unsigned int&, unsigned int&, const char *);
-    bool RunQuery(uint64_t&, const char *);
-    bool RunQuery(const char *);
-
-    void SetAutocommit(bool);
-    void Close();
-
-    void GenerateDBStructure();
-    void UploadIMSData(const IMSData&);
-
-    void SetDatabaseName(std::string);
+    bool UploadIMSData(const IMSData&);
     void SetConverterName(std::string, std::string);
 };
 

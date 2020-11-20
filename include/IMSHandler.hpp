@@ -44,9 +44,7 @@ private:
     IMSData imsData;
 
     //Data validation
-    bool thresholdMethod = false; //Filter QC files by threshold or when SUM = 0
-    uint64_t QCSpectrumZeroCount = 0;
-    uint64_t QCSpectrumZeroThreshold = 100; //Not all values are zero, so mark as not valid if the zero count is above the threshold
+    unsigned int sumThreshold = 30000;
 
     /*
      * Check file header
@@ -73,6 +71,7 @@ public:
     void Close(); 
     void SetValidFlag(bool); //override valid flag
     void DisableValidFlagOverride();
+    void SetThreshold(unsigned int);
 };
 
 

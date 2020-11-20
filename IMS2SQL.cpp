@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <iostream>
 #include <ctype.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include "SQLGenerator.hpp"
@@ -40,7 +39,7 @@ int main(int argc, char** argv)
         switch (c)
         {
         case 'n':
-            sqlGen.SetDatabaseName(std::string(optarg));
+            sqlGen.SelectDatabase(optarg);
             break;
         case 'f':
             fHandler.AppendFile(std::string(optarg));
@@ -77,7 +76,8 @@ int main(int argc, char** argv)
         sqlGen.SetConverterName(firstname, lastname);
     }
 
-    sqlGen.Connect();
+    //sqlGen.Connect();
+    sqlGen.Connect("username", "password", "database");
     for (int i = 0; i < fileList.size(); i++)
     {
         if(ims.Open(fileList[i])) sqlGen.UploadIMSData(ims.GetIMSData());

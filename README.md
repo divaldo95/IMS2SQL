@@ -34,7 +34,23 @@ Before compilation, edit [source/SQLGenerator.cpp](source/SQLGenerator.cpp) and 
  There is an [SQL script](database/decay_mysql_create.sql), which creates the database and the tables in the database folder. Just import it.
  The [structure](database/structure.png) can be found in that directory: ![DB structure](database/structure.png). As of the latest update, I switched to MySQL Workbench, which means that the database structure can be viewed by opening [structure.mwb](database/structure.mwb). Use MySQL Workbench for forward engineering the model into an SQL script. If you are using older versions of MySQL/MariaDB and run into a syntax error because of the VISIBLE word, just remove all of it from the SQL script and import it again.
 
+## Errors on building
+If you get errors of std::filesystem, try to change `define  INCLUDE_STD_FILESYSTEM_EXPERIMENTAL  0` to `define INCLUDE_STD_FILESYSTEM_EXPERIMENTAL  1` after `// Not on Visual Studio. Let's use the normal version` in [filesystem.hpp](include/filesystem.hpp). This should solve building errors. Because of some errors in CMakeLists.txt, Decay Tool is also need to link std::filesystem library. It will be fixed later. You can implement your own version using SQLConnector base class.
+
 # Changelog
+## 2020.11.20
+* Fixed some bugs
+* Creation of decay tool which contains some functions for handling the database (more will be added later)
+
+## 2020.11.11
+* SQL connection handler now available as base class
+* Valid flag depends on SUM or you can set an explicit value
+
+## 2020.11.04
+* Header check fixes
+* More informative logging
+* Exception handling
+
 ## 2020-10-06
 * Modifications on memory handling
 * Added certificate readings
